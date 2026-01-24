@@ -25,40 +25,48 @@ const App: React.FC = () => {
   const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   
   const [deck, setDeck] = useState<DeckState | null>(() => {
-    const saved = localStorage.getItem(DECK_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem(DECK_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      console.error("Failed to parse deck from storage", e);
+      return null;
+    }
   });
 
   const [settings, setSettings] = useState<AppSettings>(() => {
-    const saved = localStorage.getItem('chuvashia_settings');
     const defaultUrl = 'https://raw.githubusercontent.com/fortnoxants2-afk/Chuvash/main/'; 
-    
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (!parsed.imageBaseUrl || parsed.imageBaseUrl === '' || parsed.imageBaseUrl === './') {
-        parsed.imageBaseUrl = defaultUrl;
-      }
-      if (!parsed.activeCategories) {
-        parsed.activeCategories = ['znamenitosti', 'rayony', 'prazdniki', 'skulptury', 'promisel', 'yazik'];
-      }
-      return parsed;
-    }
-    return {
+    const defaultSettings: AppSettings = {
       sound: true,
       music: true,
       diceEnabled: true,
       imageBaseUrl: defaultUrl,
       activeCategories: ['znamenitosti', 'rayony', 'prazdniki', 'skulptury', 'promisel', 'yazik']
     };
+
+    try {
+      const saved = localStorage.getItem('chuvashia_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          imageBaseUrl: (!parsed.imageBaseUrl || parsed.imageBaseUrl === '' || parsed.imageBaseUrl === './') 
+            ? defaultUrl 
+            : parsed.imageBaseUrl
+        };
+      }
+    } catch (e) {
+      console.error("Failed to parse settings from storage", e);
+    }
+    return defaultSettings;
   });
 
-  // Синхронизация настроек аудио при их изменении
   useEffect(() => {
     audioService.setMusicEnabled(settings.music);
     audioService.setSoundEnabled(settings.sound);
   }, [settings.music, settings.sound]);
 
-  // Запуск музыки при первом клике (политика браузеров)
   useEffect(() => {
     const startAudio = () => {
       audioService.playMusic();
@@ -81,12 +89,13 @@ const App: React.FC = () => {
     if (allQuestions.length > 0) {
       const filtered = allQuestions.filter(q => settings.activeCategories.includes(q.category));
       const ids = filtered.map(q => q.id);
+      
       const currentIdsSorted = [...(deck?.order || [])].sort().join(',');
       const newIdsSorted = [...ids].sort().join(',');
 
-      if (!deck || currentIdsSorted !== newIdsSorted) {
+      if (!deck || currentIdsSorted !== newIdsSorted || ids.length === 0) {
         const newDeck = {
-          order: shuffleArray(ids),
+          order: shuffleArray(ids.length > 0 ? ids : allQuestions.map(q => q.id)),
           pointer: 0
         };
         setDeck(newDeck);
@@ -116,7 +125,7 @@ const App: React.FC = () => {
 
   const advanceDeck = () => {
     setDeck(prev => {
-      if (!prev) return prev;
+      if (!prev || prev.order.length === 0) return prev;
       let nextPointer = prev.pointer + 1;
       let nextOrder = [...prev.order];
       if (nextPointer >= prev.order.length) {
@@ -130,9 +139,9 @@ const App: React.FC = () => {
   };
 
   const currentQuestion = useMemo(() => {
-    if (!deck || allQuestions.length === 0) return null;
+    if (!deck || deck.order.length === 0 || allQuestions.length === 0) return null;
     const currentId = deck.order[deck.pointer];
-    return allQuestions.find(q => q.id === currentId) || null;
+    return allQuestions.find(q => q.id === currentId) || allQuestions[0];
   }, [deck, allQuestions]);
 
   return (
